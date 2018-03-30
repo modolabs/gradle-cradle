@@ -1,0 +1,176 @@
+/*
+ * Copyright © 2010 - 2017 Modo Labs Inc. All rights reserved.
+ *
+ * The license governing the contents of this file is located in the LICENSE
+ * file located at the root directory of this distribution. If the LICENSE file
+ * is missing, please contact sales@modolabs.com.
+ *
+ */
+
+
+ /*
+ * Usage:
+ *   Deploys archives to a remote AWS S3 bucket. Will create two top level keys, `releases` and `snapshots`.
+ *
+ *   Project must configure the `modoDeployBucket` attribute. This is the AWS S3 bucket which is used as the maven repository.
+ *   ext {
+ *       modoDeployBucket = "example-bucket"
+ *   }
+ *
+ *   The AWS credentials will be found on the development machine using the standard AWS `DefaultAWSCredentialsProviderChain`.
+ *
+ *   Project must also configure the following properties in gradle.properties
+ *      VERSION_NAME         (if 'SNAPSHOT' is found in the version name a `snapshot` build will be created.)
+ *      GROUP
+ *      POM_ARTIFACT_ID
+ *      POM_PACKAGING        ('aar' or 'jar')
+ *
+ */
+
+
+
+
+apply plugin: 'maven'
+
+buildscript {
+    repositories { jcenter() }
+    dependencies { classpath 'com.amazonaws:aws-java-sdk-s3:1.11.304' }
+}
+
+def bucketName() {
+    return project.ext.modoDeployBucket
+}
+
+def isReleaseBuild() {
+    return VERSION_NAME.contains("SNAPSHOT") == false
+}
+
+def getOutputDir() {
+    if (isReleaseBuild()) {
+        return "${project.buildDir}/releases"
+    } else {
+        return "${project.buildDir}/snapshots"
+    }
+}
+
+def getDestUrl() {
+    if (isReleaseBuild()) {
+        return "s3://${bucketName()}/releases"
+    } else {
+        return "s3://${bucketName()}/snapshots"
+    }
+}
+
+def getMetadataRelativePath() {
+    return GROUP.replace(".", "/") + "/" + POM_ARTIFACT_ID + "/maven-metadata.xml"
+}
+
+def getLocalMetadataPath() {
+    return getOutputDir() + "/" + getMetadataRelativePath()
+}
+
+
+import com.amazonaws.AmazonServiceException;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.S3ObjectInputStream;
+
+def retrieveRemoteMetadataXML() {
+    final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
+    try {
+        def key_name = "releases/${getMetadataRelativePath()}"
+
+        def file = new File(getLocalMetadataPath())
+        file.getParentFile().mkdirs()
+
+        S3Object o = s3.getObject(bucketName(), key_name);
+        S3ObjectInputStream s3is = o.getObjectContent();
+        FileOutputStream fos = new FileOutputStream(file);
+        byte[] read_buf = new byte[1024];
+        int read_len = 0;
+        while ((read_len = s3is.read(read_buf)) > 0) {
+            fos.write(read_buf, 0, read_len);
+        }
+        s3is.close();
+        fos.close();
+    } catch (AmazonServiceException e) {
+        throw new RuntimeException(e.getMessage())
+    } catch (FileNotFoundException e) {
+        throw new RuntimeException(e.getMessage())
+    } catch (IOException e) {
+        throw new RuntimeException(e.getMessage())
+    }
+}
+
+def outputFileTree() {
+    return project.fileTree(getOutputDir())
+}
+
+def uploadFileTreeToS3() {
+    final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient()
+    String bucket = bucketName()
+
+    def tree = outputFileTree()
+    def treePath = new File(getOutputDir()).getParentFile().toPath()
+
+    for (File file : tree.getFiles()) {
+        def path = file.toPath()
+        def keyName = treePath.relativize(path).toString()
+
+        try {
+            println "Uploading ${keyName} to ${bucket}"
+            s3.putObject(bucket, keyName, file)
+        } catch (AmazonServiceException e) {
+            throw new RuntimeException(e.getMessage())
+        }
+    }
+}
+
+// pulls maven-metadata.xml for artifact into outputDir
+task pullRemoteMetadata {
+    doLast {
+        retrieveRemoteMetadataXML()
+    }
+}
+
+// uploadArchives writes maven artifacts to outputDir
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            repository(url: "file://" + getOutputDir())
+            pom.groupId = GROUP
+            pom.artifactId = POM_ARTIFACT_ID
+            pom.version = VERSION_NAME
+            pom.packaging = POM_PACKAGING
+        }
+    }
+}
+
+task deployRelease {
+    doLast {
+        uploadFileTreeToS3()
+    }
+}
+
+task deployDryRun {
+    doLast {
+        println "-- Deploy Dry Run  --"
+        println "Bucket: ${bucketName()}"
+
+        def tree = outputFileTree()
+        def treePath = new File(getOutputDir()).getParentFile().toPath()
+
+        for (File file : outputFileTree()) {
+            def path = file.toPath()
+            def keyName = treePath.relativize(path)
+
+            println "Deploy: ${keyName} \n\t\tfrom ${file.toPath()}"
+        }
+    }
+}
+
+uploadArchives.dependsOn pullRemoteMetadata
+
+deployRelease.dependsOn uploadArchives
+deployDryRun.dependsOn uploadArchives
