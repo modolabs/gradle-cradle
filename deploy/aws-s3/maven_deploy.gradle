@@ -78,21 +78,29 @@ import com.amazonaws.services.s3.model.S3ObjectInputStream;
 
 def retrieveRemoteMetadataXML() {
     final AmazonS3 s3 = AmazonS3ClientBuilder.defaultClient();
-    def key_name = "releases/${getMetadataRelativePath()}"
+    try {
+        def key_name = "releases/${getMetadataRelativePath()}"
 
-    def file = new File(getLocalMetadataPath())
-    file.getParentFile().mkdirs()
+        def file = new File(getLocalMetadataPath())
+        file.getParentFile().mkdirs()
 
-    S3Object o = s3.getObject(bucketName(), key_name);
-    S3ObjectInputStream s3is = o.getObjectContent();
-    FileOutputStream fos = new FileOutputStream(file);
-    byte[] read_buf = new byte[1024];
-    int read_len = 0;
-    while ((read_len = s3is.read(read_buf)) > 0) {
-        fos.write(read_buf, 0, read_len);
+        S3Object o = s3.getObject(bucketName(), key_name);
+        S3ObjectInputStream s3is = o.getObjectContent();
+        FileOutputStream fos = new FileOutputStream(file);
+        byte[] read_buf = new byte[1024];
+        int read_len = 0;
+        while ((read_len = s3is.read(read_buf)) > 0) {
+            fos.write(read_buf, 0, read_len);
+        }
+        s3is.close();
+        fos.close();
+    } catch (AmazonServiceException e) {
+        if (e.getStatusCode() == 404) {
+            println 'Remote metadata does not exist.'
+        } else {
+            throw e
+        }
     }
-    s3is.close();
-    fos.close();
 }
 
 def outputFileTree() {
