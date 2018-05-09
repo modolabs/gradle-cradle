@@ -95,11 +95,11 @@ def retrieveRemoteMetadataXML() {
         s3is.close();
         fos.close();
     } catch (AmazonServiceException e) {
-        throw new RuntimeException(e.getMessage())
-    } catch (FileNotFoundException e) {
-        throw new RuntimeException(e.getMessage())
-    } catch (IOException e) {
-        throw new RuntimeException(e.getMessage())
+        if (e.getStatusCode() == 404) {
+            println 'Remote metadata does not exist.'
+        } else {
+            throw e
+        }
     }
 }
 
