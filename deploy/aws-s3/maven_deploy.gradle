@@ -33,8 +33,11 @@
 apply plugin: 'maven'
 
 buildscript {
-    repositories { jcenter() }
-    dependencies { classpath 'com.amazonaws:aws-java-sdk-s3:1.11.304' }
+    repositories {
+        jcenter()
+        mavenCentral()
+    }
+    dependencies { classpath 'com.amazonaws:aws-java-sdk-s3:1.12.23' }
 }
 
 def bucketName() {
