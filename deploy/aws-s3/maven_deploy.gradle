@@ -30,7 +30,7 @@
 
 
 
-apply plugin: 'maven'
+apply plugin: 'maven-publish'
 
 buildscript {
     repositories {
@@ -138,14 +138,21 @@ task pullRemoteMetadata {
 }
 
 // uploadArchives writes maven artifacts to outputDir
-uploadArchives {
+publishing {
+     publications {
+        release(MavenPublication) {
+            groupId = GROUP
+            artifactId = POM_ARTIFACT_ID
+            version = VERSION_NAME
+            pom {
+                packaging = POM_PACKAGING
+            }
+        }  
+    }
+
     repositories {
-        mavenDeployer {
-            repository(url: "file://" + getOutputDir())
-            pom.groupId = GROUP
-            pom.artifactId = POM_ARTIFACT_ID
-            pom.version = VERSION_NAME
-            pom.packaging = POM_PACKAGING
+        maven {
+            url = uri("file://" + getOutputDir())
         }
     }
 }
@@ -173,7 +180,7 @@ task deployDryRun {
     }
 }
 
-uploadArchives.dependsOn pullRemoteMetadata
+publishReleasePublicationToMavenRepository.dependsOn pullRemoteMetadata
 
-deployRelease.dependsOn uploadArchives
-deployDryRun.dependsOn uploadArchives
+deployRelease.dependsOn publishReleasePublicationToMavenRepository
+deployDryRun.dependsOn  publishReleasePublicationToMavenRepository
