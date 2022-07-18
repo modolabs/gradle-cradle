@@ -139,7 +139,7 @@ task pullRemoteMetadata {
 
 // uploadArchives writes maven artifacts to outputDir
 publishing {
-     publications {
+    publications {
         release(MavenPublication) {
             groupId = GROUP
             artifactId = POM_ARTIFACT_ID
@@ -147,7 +147,10 @@ publishing {
             pom {
                 packaging = POM_PACKAGING
             }
-        }  
+            afterEvaluate {
+                from components.release
+            }  
+        }
     }
 
     repositories {
